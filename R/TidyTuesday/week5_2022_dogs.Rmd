@@ -1,0 +1,198 @@
+---
+title: "TidyTuesday_week5_2022"
+author: "Jeanette Lyerly"
+date: "6/3/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Tidy Tuesday - week 5 - 2022
+
+Week 5 of Tidy Tuesday is about dogs. In this markdown we will load some data, run some exploratory analysis, and make some kind of graph with the dog breed data.
+
+Load packages. 
+
+```{r}
+#load packages
+library(tidytuesdayR)
+library(tidyverse)
+library(kableExtra)
+library(ggrepel)
+```
+
+### Load the data
+
+Load the data. 
+
+```{r}
+#get the data
+breed_traits <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-02-01/breed_traits.csv')
+trait_description <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-02-01/trait_description.csv')
+breed_rank_all <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2022/2022-02-01/breed_rank.csv')
+
+```
+
+I've got three data frames with data about dogs. Take a look at this.
+
+```{r}
+#what's in here
+glimpse(breed_traits)
+glimpse(breed_rank_all)
+glimpse(trait_description)
+
+#summaries
+summary(breed_traits)
+summary(breed_rank_all)
+summary(trait_description)
+
+```
+
+We have information about 195 dog breeds. Breed traits is lots of numeric data, with some categorical data for coat type, and coat length.   
+Breed rank looks like data by year - popularity, and some links and images.   
+Trait description has info about the different traits. Let's look at the scales for that.   
+
+```{r}
+trait_description[,1:3]
+
+```
+
+
+### Explore the data
+
+Let's look at some distributions of values for the traits. Check for any odd data.
+
+```{r}
+
+#pivot the data and look at distributions and means for breeds
+traits_td <- breed_traits %>% pivot_longer(., cols = c(`Affectionate With Family`:`Drooling Level`, `Openness To Strangers`:`Mental Stimulation Needs`), names_to = "Trait", values_to = "DogData") %>% select(Breed, Trait, DogData)
+
+ggplot(data = traits_td, aes(x = DogData)) +
+  geom_histogram(binwidth = 1) +
+  facet_wrap(~Trait)
+
+#there's a zero in all of these - is this the same value?
+traits_td %>% group_by(Breed) %>% summarize(mean = mean(DogData, na.rm = T)) %>% arrange(mean)
+traits_td %>% group_by(Trait) %>% filter(DogData == 0)
+```
+
+This Plott Hounds data looks like an error - all the traits are 0 (or Plott hounds are very unpopular). In either case, remove this from the data set.
+Look at this again.
+
+```{r}
+breed_traits <- breed_traits %>% filter(!str_detect(Breed, "Plott")) #remove the Plott Hounds
+
+#pivot the data and look at distributions again
+traits_td <- breed_traits %>% pivot_longer(., cols = c(`Affectionate With Family`:`Drooling Level`, `Openness To Strangers`:`Mental Stimulation Needs`), names_to = "Trait", values_to = "DogData") %>% select(Breed, Trait, DogData)
+
+ggplot(data = traits_td, aes(x = DogData)) +
+  geom_histogram(binwidth = 1) +
+  facet_wrap(~Trait)
+
+```
+
+This looks better.  
+
+We can see ranges over the scale for barking, grooming, and shedding. Otherwise we can see there are a few that are at one end of the scale or the other (some not very adaptable, not good with kids, etc.).   
+
+Questions we might ask if we were thinking about a dog...   
+
+### Grooming and drool
+
+Two important questions - how much grooming, and how much drool?    
+drooling level 1 = no drooling, 5 = get a towel   
+grooming frequency 1 = monthly, 5 = daily   
+So in the scale 1 is less drool and less grooming, and 5 is slobbery and needs a lot of grooming. Select the dogs where grooming needs and drooling are <=2.    
+
+```{r}
+#make some tables - how many in each group
+table(breed_traits$`Drooling Level`) #scale 0 - 5
+table(breed_traits$`Coat Grooming Frequency`) #scale 0 - 5
+
+#fancier tables
+kable(table(breed_traits$`Drooling Level`), caption = "Freq table for Drooling", col.names = c("Scale 0-5", "Freq")) %>% kable_styling() #scale 0 - 5
+kable(table(breed_traits$`Coat Grooming Frequency`), caption = "Freq table for Grooming", col.names = c("Scale 0-5", "Freq")) %>% kable_styling() #scale 0 - 5
+
+#filter for low grooming frequency and not much drool
+lowgroom_lowdrool <- breed_traits %>% filter(`Coat Grooming Frequency` <= 2 & `Drooling Level` <= 2)
+nrow(lowgroom_lowdrool)
+```
+
+We've got 98 breeds here with low grooming requirements (<= 2) and also that don't drool (<=2). 
+
+Next, consider how much exercise these dogs need. Let's face it - as a lazy person I would need a laz(ier) dog.   
+
+### Exercise and mental stimulation
+
+What are the distributions of these traits among the subset of dogs that don't require much grooming and don't drool? Make some histograms.
+
+```{r}
+#pivot to long format
+lowgroom_lowdrool_td <- lowgroom_lowdrool %>% pivot_longer(., cols = c(`Affectionate With Family`:`Drooling Level`, `Openness To Strangers`:`Mental Stimulation Needs`), names_to = "Trait", values_to = "DogData") %>% select(Breed, Trait, DogData)
+
+ggplot(lowgroom_lowdrool_td %>% filter(Trait %in% c("Playfulness Level", "Energy Level", "Mental Stimulation Needs")), aes(x = DogData), !is.na(DogData)) +
+  geom_histogram(aes(color = Trait, fill = Trait), binwidth = 1, show.legend = F) +
+  facet_wrap(~Trait) +
+  labs(title = "Histogram of Three Activity Traits", subtitle = "For a subset of 98 dog breeds", x = "Scale 0-5", y = "Count")
+
+
+```
+
+The range we see here is from 3 to 5. We've got some dogs here with different activity levels. No very lazy dogs (no 1-2's), but some high energy dogs.   
+
+Look among these for a trainable, lazy dog. Graph the energy level vs  trainability.
+
+```{r}
+
+ggplot(data = lowgroom_lowdrool, aes(x = lowgroom_lowdrool$`Trainability Level`, y = lowgroom_lowdrool$`Energy Level`)) +
+  geom_jitter(aes(color = Breed), show.legend = F) +
+  labs(title = "Energy vs Trainability for 98 dog breeds", x = "Trainability 0-5", y = "Energy 0-5")
+
+```
+
+Label that group on the bottom right that is trainable and kind-of lazy.
+
+```{r}
+
+ggplot(data = lowgroom_lowdrool, aes(x = lowgroom_lowdrool$`Trainability Level`, y = lowgroom_lowdrool$`Energy Level`)) +
+  geom_jitter(aes(color = Breed), show.legend = F) +
+  labs(title = "Energy vs Trainability for 98 dog breeds", x = "Trainability 0-5", y = "Energy 0-5") +
+  geom_text_repel(aes(label = ifelse(lowgroom_lowdrool$`Trainability Level`>4.5 & lowgroom_lowdrool$`Energy Level`<3.5, as.character(Breed),"")))
+
+```
+
+Get the stats on these.
+
+```{r}
+train_lazy <- lowgroom_lowdrool %>% filter(`Trainability Level`>4.5 & `Energy Level`<3.5)
+
+kable(train_lazy, caption = "Breeds with low grooming and less drool who are trainable and (sort-of) lazy") %>% kable_styling() #scale 0 - 5
+
+```
+
+Last thing we might consider - barking. Our house is lazy and quiet.
+
+### Barking
+
+Among the dogs we've selected, who is the quietest?
+
+```{r}
+
+ggplot(train_lazy, aes(x = Breed, y = `Barking Level`)) +
+  geom_point(aes(color = Breed), size = 2) +
+  labs(title = "Barking level among Four Dog Breeds") +
+  scale_y_continuous(limits = c(0,5))
+
+```
+
+### Conclusions
+
+Get a golden retriever.
+
+
+
+
+
+
